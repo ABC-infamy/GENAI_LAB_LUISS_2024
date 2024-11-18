@@ -1,0 +1,78 @@
+version: "3"
+
+services:
+  app:
+    build:
+      context: ./app
+    env_file: ./app/.env
+    volumes:
+      - ./app/src:/usr/src/app
+    depends_on:
+      - database
+      - rabbitmq
+    ports:
+      - "8080:8080"
+    networks:
+      - app_network
+
+  streamlit:
+    build:
+      context: ./app/webui
+    env_file: ./app/.env
+    volumes:
+      - ./app/webui:/app/webui
+    ports:
+      - "8501:8501"
+    depends_on:
+      - database
+      - rabbitmq
+      - app
+    environment:
+      - DATABASE_URL=postgresql://$DB_USER:$DB_PASS@database:5432/$DB_NAME
+      - RABBITMQ_URL=amqp://$RABBITMQ_USER:$RABBITMQ_PASS@rabbitmq:5672/
+    networks:
+      - app_network
+
+  web-proxy:
+    image: nginx:latest
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - app_network
+
+  rabbitmq:
+      image: rabbitmq:3.10.7-management
+      ports:      
+        - 15672:15672
+        - 5672:5672
+      volumes:
+        - ./rabbitmq:/var/lib/rabbitmq
+      restart: on-failure  
+      environment:
+        - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+        - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
+      networks:
+      - app_network
+
+  database:
+    image: postgres:16-alpine
+    container_name: genai-project-database-1
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    expose:
+      - 5432
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=${DB_NAME}
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
